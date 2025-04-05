@@ -1,6 +1,6 @@
 // server.js
 const express = require('express');
-const { calcularPrevidenciaComBonus } = require('./calculator'); // Importa a função
+const { calcularPrevidenciaComBonus } = require('../calculator'); // Importa a função
 
 const app = express();
 const PORT = process.env.PORT || 3000; // Usa a porta do ambiente ou 3000
