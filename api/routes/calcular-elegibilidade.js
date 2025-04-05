@@ -4,7 +4,7 @@ const { Router } = require('express');
 const router = Router();
 
 // --- Rota da API para verificar elegibilidade ---
-router.post('/api/checar-elegibilidade', (req, res) => {
+router.post('/checar-elegibilidade', (req, res) => {
     // 1. Obter dados do corpo da requisição
     const { dateOfBirth, planMembershipYears } = req.body;
 
