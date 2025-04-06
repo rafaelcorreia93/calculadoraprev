@@ -80,7 +80,7 @@ function calcularBeneficioMensal(saldoTotalAcumulado, formaRecebimento, parametr
 }
 
 // --- Rota da API ---
-router.post('/api/calcular-beneficio', (req, res) => {
+router.post('/calcular-beneficio', (req, res) => {
     console.log('Recebida requisição POST em /api/calcular-beneficio');
     console.log('Corpo da requisição:', req.body);
 
