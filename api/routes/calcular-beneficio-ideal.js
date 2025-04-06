@@ -314,106 +314,199 @@ function calcularProjecaoPrevidencia(params, options = {}) {
 }
 
 
-// --- Nova Função: calcularParametroIdeal ---
 /**
  * Calcula os parâmetros ideais... (descrição anterior)
- * Agora considera os limites máximos de pagamento.
+ * Usa busca binária para Valor Fixo.
+ * Usa estratégia de DUPLA AMOSTRAGEM para Percentual Anual.
  */
 function calcularParametroIdeal(buscaParams) {
     const {
         saldoAcumuladoInicial, dataInicioBeneficio, dataNascimentoCliente,
         percentualRentabilidadeAnual, objetivoDuracaoAnos,
-        // --- Receber Limites (com padrões) ---
         limiteMaximoPercentualSaldo = 2,
         limiteMaximoPrazo = 25,
         limiteMaximoValorFixo = 50000
-    } = buscaParams; // Recebe os limites da chamada
+    } = buscaParams;
 
-    // ... (validações básicas de buscaParams inalteradas) ...
-     if (!saldoAcumuladoInicial || !dataInicioBeneficio || !dataNascimentoCliente || percentualRentabilidadeAnual === undefined || !objetivoDuracaoAnos || objetivoDuracaoAnos <= 0) { throw new Error("Parâmetros inválidos para calcularParametroIdeal."); }
-     // Validar limites recebidos
-     if (typeof limiteMaximoPercentualSaldo !== 'number' || limiteMaximoPercentualSaldo < 0) throw new Error("limiteMaximoPercentualSaldo inválido em buscaParams.");
-     if (typeof limiteMaximoPrazo !== 'number' || limiteMaximoPrazo < 0) throw new Error("limiteMaximoPrazo inválido em buscaParams.");
-     if (typeof limiteMaximoValorFixo !== 'number' || limiteMaximoValorFixo < 0) throw new Error("limiteMaximoValorFixo inválido em buscaParams.");
+    // ... (validações básicas de buscaParams e limites inalteradas) ...
+    if (!saldoAcumuladoInicial || !dataInicioBeneficio || !dataNascimentoCliente || percentualRentabilidadeAnual === undefined || !objetivoDuracaoAnos || objetivoDuracaoAnos <= 0) { throw new Error("Parâmetros inválidos para calcularParametroIdeal."); }
+    if (typeof limiteMaximoPercentualSaldo !== 'number' || limiteMaximoPercentualSaldo < 0) throw new Error("limiteMaximoPercentualSaldo inválido em buscaParams.");
+    if (typeof limiteMaximoPrazo !== 'number' || limiteMaximoPrazo < 0) throw new Error("limiteMaximoPrazo inválido em buscaParams.");
+    if (typeof limiteMaximoValorFixo !== 'number' || limiteMaximoValorFixo < 0) throw new Error("limiteMaximoValorFixo inválido em buscaParams.");
 
 
     const targetMeses = objetivoDuracaoAnos * 12;
     const paramsBase = {
         saldoAcumuladoInicial, dataInicioBeneficio, dataNascimentoCliente,
         percentualRentabilidadeAnual, saldoMinimo: 0, idadeMaxima: 0,
-        // Passa os limites para a simulação interna, caso sejam necessários lá
         limiteMaximoPercentualSaldo, limiteMaximoPrazo, limiteMaximoValorFixo
     };
 
-    const MAX_ITERATIONS = 100;
-    const TOLERANCE = new Decimal('0.01');
+    const MAX_ITERATIONS = 100; // Mantido para busca binária VF
+    const TOLERANCE = new Decimal('0.01'); // Mantido para busca binária VF
 
-    // --- Função Auxiliar de Busca Binária (findParam - inalterada internamente) ---
-     const findParam = (tipo, minParam, maxParam) => { /* ... lógica da busca ... */
-        let minP = new Decimal(minParam); let maxP = new Decimal(maxParam); let bestParam = null;
-        for (let i = 0; i < MAX_ITERATIONS; i++) {
-            if (maxP.minus(minP).abs().lt(TOLERANCE)) break;
-            let midP = minP.plus(maxP).dividedBy(2); if (midP.eq(minP) || midP.eq(maxP)) break;
-            const paramsSimulacao = { ...paramsBase, tipoPagamento: tipo, parametroPagamento: midP.toNumber() };
-            try {
-                 const resultadoBusca = calcularProjecaoPrevidencia(paramsSimulacao, { buscaObjetivo: { targetMeses: targetMeses, leve: true, ignorarLimites: true } });
-                 if (resultadoBusca.parouAntesPorSaldo && resultadoBusca.mesesDuracao < targetMeses) { maxP = midP; }
-                 else if (resultadoBusca.parouNoTarget && resultadoBusca.saldoFinalTarget.gt(TOLERANCE)) { minP = midP; bestParam = midP; }
-                 else if (resultadoBusca.parouNoTarget && resultadoBusca.saldoFinalTarget.abs().lte(TOLERANCE)) { bestParam = midP; break; }
-                 else if (resultadoBusca.mesesDuracao > targetMeses && resultadoBusca.saldoFinalTarget.gt(TOLERANCE)) { minP = midP; bestParam = midP; }
-                 else { if (resultadoBusca.parouAntesPorSaldo) { maxP = midP; } else { minP = midP; bestParam = midP; } }
-             } catch (error) { console.error(`Erro na simulação durante busca (${tipo}, param=${midP.toNumber()}): ${error.message}`); return null; }
-         } // Fim for
-         return bestParam ? bestParam : minP.plus(maxP).dividedBy(2);
+    // --- Função Auxiliar de Busca Binária (findParam - Usada apenas para VALOR_FIXO) ---
+    const findParamVF = (minParam, maxParam) => {
+         let minP = new Decimal(minParam); let maxP = new Decimal(maxParam); let bestParam = null;
+         for (let i = 0; i < MAX_ITERATIONS; i++) {
+             if (maxP.minus(minP).abs().lt(TOLERANCE)) break;
+             let midP = minP.plus(maxP).dividedBy(2); if (midP.eq(minP) || midP.eq(maxP)) break;
+             const paramsSimulacao = { ...paramsBase, tipoPagamento: 'VALOR_FIXO', parametroPagamento: midP.toNumber() };
+             if (midP.gt(limiteMaximoValorFixo)) { maxP = midP; continue; } // Checagem de limite
+             try {
+                  const resultadoBusca = calcularProjecaoPrevidencia(paramsSimulacao, { buscaObjetivo: { targetMeses: targetMeses, leve: true, ignorarLimites: true } });
+                  if (resultadoBusca.parouAntesPorSaldo && resultadoBusca.mesesDuracao < targetMeses) { maxP = midP; }
+                  else if (resultadoBusca.parouNoTarget && resultadoBusca.saldoFinalTarget.gt(TOLERANCE)) { minP = midP; bestParam = midP; }
+                  else if (resultadoBusca.parouNoTarget && resultadoBusca.saldoFinalTarget.abs().lte(TOLERANCE)) { bestParam = midP; break; }
+                  else if (resultadoBusca.mesesDuracao >= targetMeses && resultadoBusca.saldoFinalTarget.gt(TOLERANCE)) { minP = midP; bestParam = midP; }
+                  else { if (resultadoBusca.parouAntesPorSaldo) { maxP = midP; } else { minP = midP; bestParam = midP; } }
+              } catch (error) { if (error.message.includes("excede o limite")) { maxP = midP; } else { console.error(`Erro na simulação durante busca (VF, param=${midP.toNumber()}): ${error.message}`); return null; } }
+          } // Fim for
+          return bestParam ? bestParam : minP.plus(maxP).dividedBy(2);
+    };
+
+    // --- Função Auxiliar para Simulação Completa (Usada na Amostragem) ---
+     const runFullSimulation = (tipo, paramValue) => {
+         const paramsSim = { ...paramsBase, tipoPagamento: tipo, parametroPagamento: paramValue };
+         try {
+             const resultado = calcularProjecaoPrevidencia(paramsSim);
+             let duracaoMeses = resultado.projecao.length;
+             if (resultado.motivoTermino.code === 'MAX_PROJECAO') {
+                 duracaoMeses = paramsBase.maxAnosProjecao * 12;
+             }
+              // Retorna a duração e o parâmetro usado
+             return { param: paramValue, duracao: duracaoMeses };
+         } catch (error) {
+              // Se falhou por limite, retorna duração 0 ou negativa para indicar que é inválido/alto demais
+             if (error.message.includes("excede o limite")) {
+                  console.warn(`  - Amostra ${paramValue} ignorada: ${error.message}`);
+                 return { param: paramValue, duracao: -1 }; // Indica inválido
+             }
+             console.error(`  - Erro ao simular amostra ${paramValue}: ${error.message}`);
+             return { param: paramValue, duracao: NaN }; // Indica erro
+         }
      };
 
-    // --- Executar Buscas ---
-    // Ajusta o limite superior da busca para não exceder o limite do parâmetro
+    // --- Calcular Parâmetros ---
+
+    // 1. VALOR_FIXO (Busca Binária Direta - Usando findParamVF)
     const maxValorFixoBusca = Math.min(new Decimal(saldoAcumuladoInicial).dividedBy(12).toNumber(), limiteMaximoValorFixo);
-    const idealValorFixoDecimal = findParam('VALOR_FIXO', 0, maxValorFixoBusca);
+    const idealValorFixoDecimal = findParamVF(0, maxValorFixoBusca);
 
-    const maxPercentualBusca = Math.min(50, limiteMaximoPercentualSaldo); // Limita busca a 50% ou ao limite, o que for menor
-    const idealPercentualAnualDecimal = findParam('PERCENTUAL_SALDO_ANUAL', 0, maxPercentualBusca);
+    // 2. PERCENTUAL_SALDO_ANUAL (Estratégia de Dupla Amostragem)
+    let idealPercentualAnualDecimal = null;
+    if (limiteMaximoPercentualSaldo > 0) {
+        console.log(`Iniciando busca por dupla amostragem para Percentual Anual (Limite: ${limiteMaximoPercentualSaldo}%)`);
+        const numSamples = 6; // Pontos por fase
+        let melhorPercentualGeral = new Decimal(0);
+        let menorDiferencaGeral = Infinity;
 
-    // --- Aplicar Limites ao Resultado e Definir Prazo ---
-    let finalValorFixo = null;
-    let valorFixoCapped = false;
-    if (idealValorFixoDecimal) {
-        if (idealValorFixoDecimal.gt(limiteMaximoValorFixo)) {
-            finalValorFixo = new Decimal(limiteMaximoValorFixo);
-            valorFixoCapped = true;
-        } else {
-            finalValorFixo = idealValorFixoDecimal;
+        // --- Fase 1: Amostragem Inicial ---
+        console.log("Fase 1: Amostragem Inicial...");
+        const sampleStep1 = new Decimal(limiteMaximoPercentualSaldo).dividedBy(numSamples - 1);
+        const samplePoints1 = [];
+        for (let i = 0; i < numSamples; i++) { samplePoints1.push(sampleStep1.times(i)); }
+
+        let minDiff1 = Infinity;
+        let bestSamplePerc1 = new Decimal(0);
+        const sampleResults1 = [];
+
+        for (const samplePerc1 of samplePoints1) {
+            const result1 = runFullSimulation('PERCENTUAL_SALDO_ANUAL', samplePerc1.toNumber());
+             if (!isNaN(result1.duracao) && result1.duracao >= 0) { // Processa apenas resultados válidos
+                 const diff1 = Math.abs(result1.duracao - targetMeses);
+                 console.log(`  - Amostra ${samplePerc1.toFixed(4)}%: Duração ${result1.duracao} meses, Diff ${diff1.toFixed(0)}`);
+                 sampleResults1.push({ perc: samplePerc1, diff: diff1 });
+                 if (diff1 < minDiff1) {
+                     minDiff1 = diff1;
+                     bestSamplePerc1 = samplePerc1;
+                 }
+                 // Atualiza o melhor geral encontrado até agora
+                  if (diff1 < menorDiferencaGeral) {
+                     menorDiferencaGeral = diff1;
+                     melhorPercentualGeral = samplePerc1;
+                 }
+             }
         }
+        console.log(`Fase 1: Melhor amostra encontrada: ${bestSamplePerc1.toFixed(4)}% com diferença de ${minDiff1.toFixed(0)} meses.`);
+
+        // --- Fase 2: Amostragem Refinada ---
+        const halfStep1 = sampleStep1.gt(0) ? sampleStep1.dividedBy(2) : new Decimal(0.1); // Evita divisão por zero se limite for 0, usa um step pequeno
+        let newMinPerc = Decimal.max(0, bestSamplePerc1.minus(halfStep1));
+        let newMaxPerc = Decimal.min(limiteMaximoPercentualSaldo, bestSamplePerc1.plus(halfStep1));
+        if (newMinPerc.gte(newMaxPerc)) { // Ajuste caso intervalo seja inválido
+            newMinPerc = Decimal.max(0, newMaxPerc.minus(sampleStep1.times(0.1))); // Usa 10% do step original
+        }
+         // Garante que newMaxPerc não exceda o limite
+         newMaxPerc = Decimal.min(limiteMaximoPercentualSaldo, newMaxPerc);
+
+        console.log(`Fase 2: Amostragem Refinada no intervalo [${newMinPerc.toFixed(4)}, ${newMaxPerc.toFixed(4)}]...`);
+        const sampleStep2 = newMaxPerc.minus(newMinPerc).dividedBy(numSamples - 1);
+        const samplePoints2 = [];
+        // Evita step NaN/Infinity se min=max
+        if (sampleStep2.isFinite() && sampleStep2.isPositive()) {
+             for (let i = 0; i < numSamples; i++) {
+                 samplePoints2.push(newMinPerc.plus(sampleStep2.times(i)));
+             }
+        } else if (newMinPerc.eq(newMaxPerc)) { // Se intervalo é um ponto só
+             samplePoints2.push(newMinPerc);
+        } else {
+             console.warn("Intervalo da Fase 2 resultou em passo inválido. Usando melhor da Fase 1.");
+             samplePoints2.push(bestSamplePerc1); // Usa apenas o melhor ponto anterior
+        }
+
+
+        let minDiff2 = Infinity;
+        // Começa com o melhor da fase 1 como candidato inicial
+        let bestRefinedPerc = melhorPercentualGeral;
+
+        for (const samplePerc2 of samplePoints2) {
+            // Evita re-simular exatamente o mesmo ponto da fase 1 se cair no array
+            if (sampleResults1.some(r => r.perc.eq(samplePerc2))) {
+                 console.log(`  - Pulando re-simulação de ${samplePerc2.toFixed(4)}% (já feito na Fase 1)`);
+                 continue;
+            }
+             // Garante que o ponto está dentro do limite máximo
+            if(samplePerc2.gt(limiteMaximoPercentualSaldo)) continue;
+
+            const result2 = runFullSimulation('PERCENTUAL_SALDO_ANUAL', samplePerc2.toNumber());
+            if (!isNaN(result2.duracao) && result2.duracao >= 0) {
+                const diff2 = Math.abs(result2.duracao - targetMeses);
+                console.log(`  - Amostra ${samplePerc2.toFixed(4)}%: Duração ${result2.duracao} meses, Diff ${diff2.toFixed(0)}`);
+                if (diff2 < minDiff2) {
+                    minDiff2 = diff2;
+                    // Não atualiza bestRefinedPerc ainda, compara com menorDiferencaGeral
+                }
+                 // Atualiza o melhor geral encontrado até agora
+                 if (diff2 < menorDiferencaGeral) {
+                     menorDiferencaGeral = diff2;
+                     melhorPercentualGeral = samplePerc2;
+                 }
+            }
+        }
+        // O resultado final é o melhor percentual geral encontrado nas duas fases
+        idealPercentualAnualDecimal = melhorPercentualGeral;
+         console.log(`Fase 2: Melhor percentual geral encontrado: ${idealPercentualAnualDecimal.toFixed(4)}% com diferença de ${menorDiferencaGeral.toFixed(0)} meses.`);
+
+    } else {
+        console.log("Busca para Percentual Anual ignorada (limite <= 0).");
     }
 
-    let finalPercentualAnual = null;
-    let percentualAnualCapped = false;
-    if (idealPercentualAnualDecimal) {
-        if (idealPercentualAnualDecimal.gt(limiteMaximoPercentualSaldo)) {
-            finalPercentualAnual = new Decimal(limiteMaximoPercentualSaldo);
-            percentualAnualCapped = true;
-        } else {
-            finalPercentualAnual = idealPercentualAnualDecimal;
-        }
-    }
 
+    // 3. PRAZO_DEFINIDO (Direto - Inalterado)
     let finalPrazoDefinido = objetivoDuracaoAnos;
     let prazoDefinidoCapped = false;
-    if (objetivoDuracaoAnos > limiteMaximoPrazo) {
-        finalPrazoDefinido = limiteMaximoPrazo;
-        prazoDefinidoCapped = true;
-    }
+    if (objetivoDuracaoAnos > limiteMaximoPrazo) { finalPrazoDefinido = limiteMaximoPrazo; prazoDefinidoCapped = true; }
 
-    // --- Retornar Resultados ---
+    // --- Aplicar Limites Finais e Formatar Resultados ---
+    // (Lógica de Capping e formatação inalterada)
+    let finalValorFixo = null; let valorFixoCapped = false; if (idealValorFixoDecimal) { if (idealValorFixoDecimal.gt(limiteMaximoValorFixo)) { finalValorFixo = new Decimal(limiteMaximoValorFixo); valorFixoCapped = true; } else { finalValorFixo = idealValorFixoDecimal; } }
+    let finalPercentualAnual = null; let percentualAnualCapped = false; if (idealPercentualAnualDecimal) { if (idealPercentualAnualDecimal.gt(limiteMaximoPercentualSaldo)) { finalPercentualAnual = new Decimal(limiteMaximoPercentualSaldo); percentualAnualCapped = true; } else { finalPercentualAnual = idealPercentualAnualDecimal; } }
+
     return {
         objetivoDuracaoAnos: objetivoDuracaoAnos,
-        limitesConsiderados: { // Informa os limites usados no cálculo
-            percentualSaldo: limiteMaximoPercentualSaldo,
-            prazoAnos: limiteMaximoPrazo,
-            valorFixo: limiteMaximoValorFixo
-        },
-        resultados: { // Agrupa os resultados
+        limitesConsiderados: { percentualSaldo: limiteMaximoPercentualSaldo, prazoAnos: limiteMaximoPrazo, valorFixo: limiteMaximoValorFixo },
+        resultados: {
             valorFixo: finalValorFixo ? finalValorFixo.toDecimalPlaces(2).toNumber() : null,
             valorFixoCapped: valorFixoCapped,
             percentualAnual: finalPercentualAnual ? finalPercentualAnual.toDecimalPlaces(4).toNumber() : null,
@@ -423,6 +516,7 @@ function calcularParametroIdeal(buscaParams) {
         }
     };
 }
+
 
 router.post('/beneficio-ideal', (req, res) => {
     // 1. Extrair e Validar Parâmetros de Entrada
