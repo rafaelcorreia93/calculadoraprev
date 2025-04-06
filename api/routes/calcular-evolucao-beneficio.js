@@ -112,7 +112,7 @@ function calcularProjecaoPrevidencia(params) {
     }
 
     const projecaoMensal = [];
-    let valor_beneficio_anual_calculado = new Decimal(0);
+    let valor_beneficio_anual_calculado_inicial = new Decimal(0);
     let status_beneficio = "Ativo";
     const d_saldo_minimo = new Decimal(saldoMinimo);
     const taxa_mensal = calcularTaxaMensal(percentualRentabilidadeAnual);
@@ -136,7 +136,7 @@ function calcularProjecaoPrevidencia(params) {
     }
     if (tipoPagamento === 'PERCENTUAL_SALDO_ANUAL') {
         if (parametroPagamento < 0) throw new Error("Percentual deve ser não-negativo.");
-        valor_beneficio_anual_calculado = saldo_atual.times(new Decimal(parametroPagamento).dividedBy(100));
+        valor_beneficio_anual_calculado_inicial = saldo_atual.times(new Decimal(parametroPagamento).dividedBy(100));
     }
      if (tipoPagamento === 'PERCENTUAL_SALDO_MENSAL' && parametroPagamento < 0) {
          throw new Error("Percentual deve ser não-negativo.");
@@ -147,7 +147,53 @@ function calcularProjecaoPrevidencia(params) {
 
     const limiteDataFinal = adicionarMes(data_inicio, maxAnosProjecao * 12);
 
+    // --- Lógica do Saldo Mínimo Efetivo ---
+    let saldo_minimo_efetivo = new Decimal(saldoMinimo); // Começa com o valor de entrada
+    let usouPrimeiroPagamentoComoMinimo = false;
+
+    if (saldoMinimo === 0 && saldo_atual.gt(0)) { // Só calcula se saldo inicial > 0
+        usouPrimeiroPagamentoComoMinimo = true;
+        let primeiro_beneficio_base = new Decimal(0);
+        const d_parametro_pagamento = new Decimal(parametroPagamento);
+        const primeiro_mes = data_inicio.getMonth() + 1;
+        const saldo_inicial_decimal = new Decimal(saldoAcumuladoInicial);
+
+        // Calcular base do primeiro benefício
+        switch (tipoPagamento) {
+            case 'VALOR_FIXO':
+                primeiro_beneficio_base = d_parametro_pagamento;
+                break;
+            case 'PERCENTUAL_SALDO_MENSAL':
+                primeiro_beneficio_base = saldo_inicial_decimal.times(d_parametro_pagamento.dividedBy(100));
+                break;
+            case 'PERCENTUAL_SALDO_ANUAL':
+                primeiro_beneficio_base = valor_beneficio_anual_calculado_inicial; // Usa o valor pré-calculado
+                break;
+            case 'PRAZO_DEFINIDO':
+                if (total_cotas_prazo_definido.gt(0)) {
+                    primeiro_beneficio_base = saldo_inicial_decimal.dividedBy(total_cotas_prazo_definido);
+                } else {
+                    primeiro_beneficio_base = new Decimal(0);
+                }
+                break;
+        }
+        if (primeiro_beneficio_base.lt(0)) { primeiro_beneficio_base = new Decimal(0); }
+
+        // Ajustar para 13º se o primeiro mês for Dezembro
+        let primeiro_beneficio_ajustado = primeiro_beneficio_base;
+        if (primeiro_mes === 12) {
+            primeiro_beneficio_ajustado = primeiro_beneficio_base.times(2);
+        }
+
+        // Limitar pelo saldo inicial e definir como saldo mínimo efetivo
+        saldo_minimo_efetivo = Decimal.max(0, Decimal.min(primeiro_beneficio_ajustado, saldo_inicial_decimal));
+        console.log(`INFO: Saldo Mínimo = 0. Definido Saldo Mínimo Efetivo como o primeiro pagamento: ${saldo_minimo_efetivo.toFixed(2)}`);
+    }
+    // Se saldoMinimo=0 e saldoInicial=0, saldo_minimo_efetivo continua 0.
+
     // --- Loop de Projeção ---
+    let meses_simulados = 0;
+    let valor_beneficio_anual_calculado_loop = valor_beneficio_anual_calculado_inicial; // Variável para o loop
     while (status_beneficio === "Ativo") {
 
         const mes_atual = data_atual.getMonth() + 1;
@@ -185,11 +231,17 @@ function calcularProjecaoPrevidencia(params) {
                 motivoTermino.description = `Encerrado: Idade (${idade_cliente}) atingiu ou superou a máxima permitida (${idadeMaxima}).`;
                 break; // Sai do loop
             }
-            if (d_saldo_minimo.gt(0) && saldo_inicial_neste_mes.lte(d_saldo_minimo)) {
-                status_beneficio = "Encerrado";
-                motivoTermino.code = "SALDO_MINIMO";
-                motivoTermino.description = `Encerrado: Saldo inicial do mês (R$ ${saldo_inicial_neste_mes.toFixed(2)}) atingiu ou ficou abaixo do mínimo permitido (R$ ${d_saldo_minimo.toFixed(2)}).`;
-                break; // Sai do loop
+            // **** USA saldo_minimo_efetivo ****
+            if (saldo_minimo_efetivo.gt(0) && saldo_inicial_neste_mes.lte(saldo_minimo_efetivo)) {
+                status_beneficio = "Encerrado"; motivoTermino.code = "SALDO_MINIMO";
+                let descMinimo = `Encerrado: Saldo inicial do mês (R$ ${saldo_inicial_neste_mes.toFixed(2)}) atingiu ou ficou abaixo do mínimo permitido (R$ ${saldo_minimo_efetivo.toFixed(2)})`;
+                if (usouPrimeiroPagamentoComoMinimo) {
+                    descMinimo += ' (definido pelo valor do primeiro pagamento).';
+                } else {
+                    descMinimo += '.';
+                }
+                motivoTermino.description = descMinimo;
+                break;
             }
         }
         // if (saldo_inicial_neste_mes.lte(0)) { OLD
@@ -221,9 +273,9 @@ function calcularProjecaoPrevidencia(params) {
                 break;
             case 'PERCENTUAL_SALDO_ANUAL':
                 if (mes_atual === 1) {
-                    valor_beneficio_anual_calculado = saldo_inicial_neste_mes.times(d_parametro_pagamento.dividedBy(100));
+                    valor_beneficio_anual_calculado_loop = saldo_inicial_neste_mes.times(d_parametro_pagamento.dividedBy(100));
                 }
-                valor_beneficio_mes_base = valor_beneficio_anual_calculado;
+                valor_beneficio_mes_base = valor_beneficio_anual_calculado_loop;
                 break;
             case 'PRAZO_DEFINIDO':
                 // ---- NOVA REGRA MENSAL ----

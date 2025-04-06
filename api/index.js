@@ -8,6 +8,7 @@ const calcularInvestimento = require('./routes/calcular-investimento'); // Impor
 const checarElegibilidade = require('./routes/calcular-elegibilidade'); // Importa Elegibilidade
 const calcularBeneficioMensal = require('./routes/calcular-primeiro-beneficio'); // Importa Beneficio
 const calcularEvolucaoBeneficio = require('./routes/calcular-evolucao-beneficio'); // Importa Beneficio
+const calcularBeneficioIdeal = require('./routes/calcular-beneficio-ideal'); // Importa Beneficio
 
 // Middleware para parsear JSON no corpo da requisição
 app.use(express.json());
@@ -25,6 +26,7 @@ app.use('/api', calcularInvestimento);
 app.use('/api', checarElegibilidade);
 app.use('/api', calcularBeneficioMensal);
 app.use('/api', calcularEvolucaoBeneficio);
+app.use('/api', calcularBeneficioIdeal);
 
 // Inicia o servidor
 app.listen(port, () => {
