@@ -191,7 +191,7 @@ function simularEvolucaoBeneficio(
 
 
 // --- Rota da API para Simulação (Atualizada) ---
-router.post('/api/simular-evolucao', (req, res) => {
+router.post('/simular-evolucao', (req, res) => {
     console.log('Recebida requisição POST em /api/simular-evolucao');
     console.log('Corpo da requisição:', req.body);
 
