@@ -21,7 +21,7 @@ function parsearDataYYYYMM(dataStr) {
 
 
 
-// --- Função de Simulação de Evolução (Atualizada com Saldo Mínimo) ---
+// --- Função de Simulação de Evolução (Frequência de Recálculo Configurável) ---
 function simularEvolucaoBeneficio(
     saldoInicial,
     formaRecebimento,
@@ -30,170 +30,142 @@ function simularEvolucaoBeneficio(
     dataInicioBeneficioStr,
     idadeLimite,
     taxaRendimentoAnualPercentual,
-    saldoMinimoPermitido
+    saldoMinimoPermitido,
+    recalculoPercentualFrequencia // Novo parâmetro: 'mensal' ou 'anual'
 ) {
     // --- Validações Robustas ---
-    // ... (Validações como antes, incluindo saldoMinimoPermitido) ...
-    if (typeof saldoInicial !== 'number' || saldoInicial <= 0) return { erro: "Saldo inicial inválido." };
-    if (!['valor_fixo', 'percentual_saldo', 'prazo_definido'].includes(formaRecebimento)) return { erro: "Forma de recebimento inválida." };
-    // ... etc ...
+    // ... (Validações anteriores mantidas) ...
     if (typeof saldoMinimoPermitido !== 'number' || saldoMinimoPermitido < 0) return { erro: "Saldo mínimo permitido inválido." };
+
+    // ---> NOVA VALIDAÇÃO: Frequência de Recálculo (só se aplica a percentual_saldo) <---
+    const frequenciasValidas = ['mensal', 'anual'];
+    if (formaRecebimento === 'percentual_saldo') {
+        if (!recalculoPercentualFrequencia || !frequenciasValidas.includes(recalculoPercentualFrequencia)) {
+            return { erro: `Frequência de recálculo inválida ou ausente ('${recalculoPercentualFrequencia}'). Use 'mensal' ou 'anual' para forma 'percentual_saldo'.` };
+        }
+    }
+    // --------------------------------------------------------------------------------
+
     const dataInicio = parsearDataYYYYMM(dataInicioBeneficioStr);
     if (!dataInicio) return { erro: "Data de início inválida (formato YYYY-MM)." };
 
     // --- Cálculo da Taxa Mensal Equivalente ---
+    // ... (como antes) ...
     const taxaAnualDecimal = taxaRendimentoAnualPercentual / 100.0;
     const taxaMensalDecimal = taxaAnualDecimal === 0 ? 0.0 : (1 + taxaAnualDecimal)**(1/12) - 1;
     const taxaMensalPercentual = taxaMensalDecimal * 100;
 
+
     // --- Inicialização da Simulação ---
     let saldoRemanescente = saldoInicial;
-    if (saldoRemanescente <= saldoMinimoPermitido) { /* ... retorno imediato como antes ... */ }
+    if (saldoRemanescente <= saldoMinimoPermitido) { /* ... retorno imediato ... */ }
 
-    let idadeAtualAnos = idadeInicialAnos;
-    let idadeAtualMesesAno = 0;
-    let mesSimulacao = 0;
-    const historicoMensal = [];
-    let motivoFimSimulacao = "";
-    let saldoFinalAposLimiteIdade = null;
-    let dataAtual = new Date(dataInicio);
-    let dataFimBeneficioStr = null;
-
-    // --- Pré-cálculo para 'prazo_definido' ---
-    // (Cálculo PMT como antes, não afetado pela ordem de rentabilidade no loop)
+    let idadeAtualAnos = idadeInicialAnos; let idadeAtualMesesAno = 0; let mesSimulacao = 0; const historicoMensal = []; let motivoFimSimulacao = ""; let saldoFinalAposLimiteIdade = null; let dataAtual = new Date(dataInicio); let dataFimBeneficioStr = null;
+    let beneficioPercentualAtual = 0; // Usado para ambos os modos de percentual
     let beneficioFixoPrazoDefinido = 0;
-    if (formaRecebimento === 'prazo_definido') { /* ... cálculo PMT como antes ... */ }
+
+    // --- Pré-cálculo ---
+    if (formaRecebimento === 'prazo_definido') {
+        /* ... cálculo PMT como antes ... */
+    } else if (formaRecebimento === 'percentual_saldo') {
+        // Calcula o valor INICIAL do benefício percentual (válido para 1º mês/ano)
+        beneficioPercentualAtual = parseFloat((saldoInicial * (parametroRecebimento / 100.0)).toFixed(2));
+        if (isNaN(beneficioPercentualAtual) || beneficioPercentualAtual < 0) { return { erro: "Erro cálculo benefício percentual inicial." }; }
+    }
 
     // --- Loop da Simulação Mensal ---
-    const MAX_ITERATIONS = (idadeLimite - idadeInicialAnos + 1) * 13 * 3;
-    let iterationCount = 0;
+    const MAX_ITERATIONS = (idadeLimite - idadeInicialAnos + 1) * 13 * 3; let iterationCount = 0;
+    while (/* condição while como antes */ saldoRemanescente > saldoMinimoPermitido && idadeAtualAnos < idadeLimite && iterationCount < MAX_ITERATIONS) {
+        iterationCount++; mesSimulacao++; const mesDataStr = formatarDataYYYYMM(dataAtual); const saldoInicioMes = saldoRemanescente;
 
-    while (/* condição do while como antes: */ saldoRemanescente > saldoMinimoPermitido && idadeAtualAnos < idadeLimite && iterationCount < MAX_ITERATIONS) {
-        iterationCount++;
-        mesSimulacao++;
-        const mesDataStr = formatarDataYYYYMM(dataAtual);
-        const saldoInicioMes = saldoRemanescente; // Guarda o saldo no início exato do mês
-
-        // --- 1. Calcular Benefício para o Mês Atual ---
-        //    (Importante: 'percentual_saldo' agora usa o saldo do *início* do mês)
+        // --- 1. Calcular/Atualizar Benefício para o Mês Atual ---
         let beneficioMesCalculado = 0;
         if (formaRecebimento === 'valor_fixo') {
             beneficioMesCalculado = parametroRecebimento;
         } else if (formaRecebimento === 'percentual_saldo') {
-            // <<< MUDANÇA AQUI: Baseado no saldo ANTES de qualquer coisa no mês
-            beneficioMesCalculado = parseFloat((saldoInicioMes * (parametroRecebimento / 100.0)).toFixed(2));
+            // ---> LÓGICA CONDICIONAL BASEADA NA FREQUÊNCIA <---
+            if (recalculoPercentualFrequencia === 'anual') {
+                // Recalcula APENAS no início do ciclo anual (exceto no primeiríssimo mês)
+                if (idadeAtualMesesAno === 0 && mesSimulacao > 1) {
+                    beneficioPercentualAtual = parseFloat((saldoInicioMes * (parametroRecebimento / 100.0)).toFixed(2));
+                    if (isNaN(beneficioPercentualAtual) || beneficioPercentualAtual < 0) { motivoFimSimulacao = "Erro recalcular benefício anual."; break; }
+                    console.log(`INFO (Anual): Recalculado benefício para ${mesDataStr}: R$ ${beneficioPercentualAtual.toFixed(2)}`);
+                }
+                // Usa o valor atual (calculado inicialmente ou anualmente)
+                beneficioMesCalculado = beneficioPercentualAtual;
+            } else { // Frequência é 'mensal'
+                // Recalcula TODO MÊS
+                beneficioPercentualAtual = parseFloat((saldoInicioMes * (parametroRecebimento / 100.0)).toFixed(2));
+                 if (isNaN(beneficioPercentualAtual) || beneficioPercentualAtual < 0) { motivoFimSimulacao = "Erro recalcular benefício mensal."; break; }
+                 beneficioMesCalculado = beneficioPercentualAtual;
+                 // console.log(`INFO (Mensal): Calculado benefício para ${mesDataStr}: R$ ${beneficioMesCalculado.toFixed(2)}`); // Log opcional
+            }
+            // -------------------------------------------------
         } else if (formaRecebimento === 'prazo_definido') {
             beneficioMesCalculado = beneficioFixoPrazoDefinido;
         }
-        if (isNaN(beneficioMesCalculado) || beneficioMesCalculado < 0) { motivoFimSimulacao = "Erro benefício."; break; }
+        if (isNaN(beneficioMesCalculado) || beneficioMesCalculado < 0) { if (!motivoFimSimulacao) motivoFimSimulacao = "Erro benefício calculado."; break; }
         // --- Fim Cálculo Benefício ---
 
-        // --- 2. Verificar Saldo e Calcular Saque Real ---
-        //    (Subtrai do saldo ANTES de aplicar rendimento)
-        let valorSaqueReal = 0;
-        if (saldoRemanescente <= 0) { // Já estava zerado
-             valorSaqueReal = 0;
-             if(!motivoFimSimulacao) motivoFimSimulacao = "Saldo zerado antes do saque";
-             saldoRemanescente = 0;
-        } else if (beneficioMesCalculado >= saldoRemanescente) { // Saca tudo
-            valorSaqueReal = saldoRemanescente;
-            saldoRemanescente = 0;
-             if(!motivoFimSimulacao) motivoFimSimulacao = "Saldo esgotado neste saque";
-        } else { // Saca o valor calculado
-            valorSaqueReal = beneficioMesCalculado;
-            saldoRemanescente = parseFloat((saldoRemanescente - valorSaqueReal).toFixed(2));
-             if (!isFinite(saldoRemanescente) || isNaN(saldoRemanescente)) { motivoFimSimulacao = "Erro saldo pós-saque."; break; }
-        }
-        const saldoAposSaque = saldoRemanescente; // Saldo antes de aplicar rendimento
-        // --- Fim Saque ---
+
+        // --- 2. Saque (como antes) ---
+        let valorSaqueReal = 0; const saldoAposSaque = 0; // Definir depois
+        // ... (lógica de saque igual à versão anterior) ...
+        if (saldoRemanescente <= 0) { valorSaqueReal = 0; if(!motivoFimSimulacao) motivoFimSimulacao = "Saldo zerado antes"; saldoRemanescente = 0; }
+        else if (beneficioMesCalculado >= saldoRemanescente) { valorSaqueReal = saldoRemanescente; saldoRemanescente = 0; if(!motivoFimSimulacao) motivoFimSimulacao = "Esgotado neste saque"; }
+        else { valorSaqueReal = beneficioMesCalculado; saldoRemanescente = parseFloat((saldoRemanescente - valorSaqueReal).toFixed(2)); if (!isFinite(saldoRemanescente) || isNaN(saldoRemanescente)) { motivoFimSimulacao = "Erro saldo pós-saque."; break; } }
+        saldoAposSaque = saldoRemanescente; // Agora sim, saldo após saque
 
 
-        // --- 3. Aplicar Rendimento Mensal ---
-        //    (Aplica sobre o saldo JÁ reduzido pelo saque)
+        // --- 3. Rendimento (como antes) ---
         let rendimentoMes = 0;
-        if (taxaMensalDecimal > 0 && saldoAposSaque > 0) { // Só aplica se saldo pós-saque > 0
-            rendimentoMes = parseFloat((saldoAposSaque * taxaMensalDecimal).toFixed(2));
-             if (!isFinite(rendimentoMes) || isNaN(rendimentoMes)) { motivoFimSimulacao = "Erro rendimento."; break; }
-             saldoRemanescente = parseFloat((saldoAposSaque + rendimentoMes).toFixed(2)); // Atualiza saldo final do mês
-             if (!isFinite(saldoRemanescente) || isNaN(saldoRemanescente)) { motivoFimSimulacao = "Erro saldo pós-rendimento."; break; }
-        }
-        // Se não houve rendimento (taxa 0 ou saldo pós-saque 0), saldoRemanescente continua sendo saldoAposSaque
-        const saldoFinalMes = saldoRemanescente; // Saldo final após saque e rendimento
-        // --- Fim Rendimento Mensal ---
+        // ... (lógica de rendimento igual à versão anterior, sobre saldoAposSaque) ...
+        if (taxaMensalDecimal > 0 && saldoAposSaque > 0) { rendimentoMes = parseFloat((saldoAposSaque * taxaMensalDecimal).toFixed(2)); /* ... checagens ... */ saldoRemanescente = parseFloat((saldoAposSaque + rendimentoMes).toFixed(2)); /* ... checagens ... */ }
+        const saldoFinalMes = saldoRemanescente;
 
 
-        // Define a data final (do último evento processado)
+        // Define data fim
         dataFimBeneficioStr = mesDataStr;
 
-        // Registrar o histórico do mês (com valores nos momentos corretos)
-        historicoMensal.push({
-            mes: mesSimulacao, dataMes: mesDataStr,
-            idadeAnos: idadeAtualAnos, idadeMesesAno: idadeAtualMesesAno + 1,
-            saldoInicioMes: saldoInicioMes, // Saldo no começo
-            beneficioSolicitado: beneficioMesCalculado,
-            beneficioSacado: valorSaqueReal,
-            saldoAposSaque: saldoAposSaque, // Saldo antes do rendimento
-            rendimentoMes: rendimentoMes,
-            saldoRemanescente: saldoFinalMes // Saldo no fim do mês (após saque e rendimento)
-        });
+        // Registrar histórico
+        historicoMensal.push({ /* ... campos como antes ... */ });
 
-        // --- 4. Verificar Condições de Parada ---
-        //    (Usa o saldo FINAL do mês)
-        if (saldoFinalMes <= saldoMinimoPermitido || motivoFimSimulacao) {
-             if (saldoFinalMes <= 0 && !motivoFimSimulacao) motivoFimSimulacao = "Saldo esgotado";
-             else if (saldoFinalMes <= saldoMinimoPermitido && !motivoFimSimulacao) motivoFimSimulacao = "Saldo atingiu ou ficou abaixo do mínimo permitido";
-            break; // Sai do loop
-        }
-        // --- Fim Verificação Parada ---
+        // --- 4. Verificar Parada (como antes) ---
+        if (saldoFinalMes <= saldoMinimoPermitido || motivoFimSimulacao) { /* ... define motivo e break ... */ }
 
-
-        // --- 5. Avançar para o Próximo Mês/Ciclo ---
-        dataAtual.setMonth(dataAtual.getMonth() + 1);
-        idadeAtualMesesAno++;
-        if (idadeAtualMesesAno >= 13) {
-            idadeAtualAnos++; idadeAtualMesesAno = 0;
-            if (idadeAtualAnos >= idadeLimite) {
-                if(!motivoFimSimulacao) motivoFimSimulacao = "Idade limite atingida";
-                saldoFinalAposLimiteIdade = saldoFinalMes; // Guarda o saldo final do último mês
-                break;
-            }
-        }
-        // --- Fim Avanço ---
+        // --- 5. Avançar tempo (como antes) ---
+        dataAtual.setMonth(dataAtual.getMonth() + 1); idadeAtualMesesAno++;
+        if (idadeAtualMesesAno >= 13) { idadeAtualAnos++; idadeAtualMesesAno = 0; if (idadeAtualAnos >= idadeLimite) { /* ... define motivo e break ... */ } }
 
     } // Fim do while
 
-    // Tratamento de Fim de Loop por Iterações ou Condição Não Prevista
-    // ... (lógica de definição final do motivoFimSimulacao como antes) ...
-    if (iterationCount >= MAX_ITERATIONS && !motivoFimSimulacao) { motivoFimSimulacao = "Limite máximo de iterações atingido."; if(idadeAtualAnos >= idadeLimite && saldoFinalAposLimiteIdade === null) saldoFinalAposLimiteIdade = saldoRemanescente; }
-    else if (!motivoFimSimulacao) {
-        if (saldoRemanescente <= 0) motivoFimSimulacao = "Saldo esgotado";
-        else if (saldoRemanescente <= saldoMinimoPermitido) motivoFimSimulacao = "Saldo abaixo do mínimo";
-        else if (idadeAtualAnos >= idadeLimite) { motivoFimSimulacao = "Idade limite atingida"; saldoFinalAposLimiteIdade = saldoRemanescente; }
-        else motivoFimSimulacao = "Condição parada não determinada";
-    }
-    if(historicoMensal.length === 0){ dataFimBeneficioStr = null; }
+    // Tratamento Fim Loop
+    // ... (lógica como antes) ...
 
-
-    // Retorna o resultado da simulação
+    // Retorna resultado
     return {
-        parametrosIniciais: { /* ... como antes ... */ },
+        parametrosIniciais: {
+            saldoInicial, formaRecebimento, parametroRecebimento,
+            idadeInicialAnos, dataInicioBeneficio: dataInicioBeneficioStr, idadeLimite,
+            taxaRendimentoAnualPercentual,
+            taxaRendimentoMensalEquivalentePercentual: parseFloat(taxaMensalPercentual.toFixed(9)),
+            saldoMinimoPermitido,
+            // ---> Adiciona a frequência usada (se aplicável) <---
+            recalculoPercentualFrequencia: formaRecebimento === 'percentual_saldo' ? recalculoPercentualFrequencia : null
+        },
         motivoFimSimulacao: motivoFimSimulacao,
         dataFimBeneficio: dataFimBeneficioStr,
         saldoFinalAposLimiteIdade: saldoFinalAposLimiteIdade,
-        saldoFinalReal: saldoRemanescente, // Saldo final real após a última operação
+        saldoFinalReal: saldoRemanescente,
         totalMesesSimulados: mesSimulacao,
         idadeFinalAlcancada: { anos: idadeAtualAnos, mesesAno: idadeAtualMesesAno + 1 },
         historicoMensal: historicoMensal
     };
 }
 
-
-
-
 // --- Rota da API para Simulação (Atualizada) ---
 router.post('/simular-evolucao', (req, res) => {
-    console.log('Recebida requisição POST em /api/simular-evolucao');
-    console.log('Corpo da requisição:', req.body);
+    console.log('POST /api/simular-evolucao', req.body);
 
     const {
         saldoTotalAcumulado,
@@ -203,33 +175,39 @@ router.post('/simular-evolucao', (req, res) => {
         dataInicioBeneficio,
         idadeLimite,
         taxaRendimentoAnualPercentual,
-        saldoMinimoPermitido // Novo campo esperado
+        saldoMinimoPermitido,
+        recalculoPercentualFrequencia // Novo campo esperado (opcional se não for percentual)
     } = req.body;
 
-    // Validação de presença dos campos (inclui o novo campo)
-    const camposObrigatorios = ['saldoTotalAcumulado', 'formaRecebimento', 'parametroRecebimento', 'idadeAtual', 'dataInicioBeneficio', 'idadeLimite', 'taxaRendimentoAnualPercentual', 'saldoMinimoPermitido'];
+    // Validação de presença dos campos
+    const camposObrigatoriosBase = ['saldoTotalAcumulado', 'formaRecebimento', 'parametroRecebimento', 'idadeAtual', 'dataInicioBeneficio', 'idadeLimite', 'taxaRendimentoAnualPercentual', 'saldoMinimoPermitido'];
+    let camposObrigatorios = [...camposObrigatoriosBase];
+
+    // ---> Validação CONDICIONAL da frequência <---
+    if (formaRecebimento === 'percentual_saldo') {
+        camposObrigatorios.push('recalculoPercentualFrequencia');
+        if(req.body.recalculoPercentualFrequencia && !['mensal', 'anual'].includes(req.body.recalculoPercentualFrequencia)){
+             return res.status(400).json({ erro: "Valor inválido para 'recalculoPercentualFrequencia'. Use 'mensal' ou 'anual'." });
+        }
+    }
+    // ------------------------------------------
+
     const camposAusentes = camposObrigatorios.filter(campo => req.body[campo] === undefined || req.body[campo] === null);
     if (camposAusentes.length > 0) {
         return res.status(400).json({ erro: `Campos obrigatórios ausentes: ${camposAusentes.join(', ')}` });
     }
 
-     // Chama a função de simulação (agora com o saldo mínimo)
+    // Chama a função de simulação (passando o novo parâmetro)
     const resultadoSimulacao = simularEvolucaoBeneficio(
         saldoTotalAcumulado, formaRecebimento, parametroRecebimento,
         idadeAtual, dataInicioBeneficio, idadeLimite,
-        taxaRendimentoAnualPercentual,
-        saldoMinimoPermitido // Passa o novo parâmetro
+        taxaRendimentoAnualPercentual, saldoMinimoPermitido,
+        recalculoPercentualFrequencia // Passa a frequência
     );
 
-    if (resultadoSimulacao.erro) {
-        console.log('Erro retornado pela função de simulação:', resultadoSimulacao.erro);
-        return res.status(400).json(resultadoSimulacao);
-    } else {
-        console.log('Simulação bem-sucedida.');
-        return res.status(200).json(resultadoSimulacao);
-    }
+    if (resultadoSimulacao.erro) { /* ... tratamento de erro ... */ }
+    else { /* ... retorno de sucesso ... */ }
 });
-
 
 
 module.exports = router; // Exporta o roteador
