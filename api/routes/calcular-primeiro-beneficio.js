@@ -5,7 +5,7 @@ const router = Router();
 
 // --- Lógica do Cálculo ---
 function calcularBeneficioMensal(saldoTotalAcumulado, formaRecebimento, parametroRecebimento) {
-    // Validação básica de tipos (JavaScript é dinamicamente tipado)
+    // Validação básica de tipos
     if (typeof saldoTotalAcumulado !== 'number' || saldoTotalAcumulado <= 0) {
         return { erro: "Saldo total acumulado deve ser um número positivo." };
     }
@@ -15,7 +15,6 @@ function calcularBeneficioMensal(saldoTotalAcumulado, formaRecebimento, parametr
     if (typeof parametroRecebimento !== 'number' ) {
          return { erro: "Parâmetro de recebimento deve ser um número." };
     }
-
 
     const formasValidas = ['valor_fixo', 'percentual_saldo', 'prazo_definido'];
     if (!formasValidas.includes(formaRecebimento)) {
@@ -30,8 +29,8 @@ function calcularBeneficioMensal(saldoTotalAcumulado, formaRecebimento, parametr
          }
      }
 
-
     let beneficioCalculado = 0.0;
+    let observacao = null; // Para adicionar notas específicas
 
     try {
         if (formaRecebimento === 'valor_fixo') {
@@ -42,20 +41,24 @@ function calcularBeneficioMensal(saldoTotalAcumulado, formaRecebimento, parametr
             const percentual = parametroRecebimento / 100.0;
             beneficioCalculado = saldoTotalAcumulado * percentual;
             console.log(`Forma: Percentual do Saldo (${parametroRecebimento}%). Benefício Mensal (calculado sobre saldo inicial): R$ ${beneficioCalculado.toFixed(2)}`);
+            observacao = "Valor referente ao primeiro mês. O valor pode variar nos meses seguintes.";
 
         } else if (formaRecebimento === 'prazo_definido') {
             const anos = parametroRecebimento;
-            const totalMeses = anos * 12;
+            // --- AJUSTE AQUI: Multiplica por 13 parcelas por ano ---
+            const totalParcelas = anos * 13;
+            // ------------------------------------------------------
 
-            if (totalMeses === 0) {
-                return { erro: "Prazo definido resulta em 0 meses." };
+            if (totalParcelas === 0) {
+                return { erro: "Prazo definido resulta em 0 parcelas." };
             }
-             if (saldoTotalAcumulado === Infinity || totalMeses === Infinity || !isFinite(saldoTotalAcumulado / totalMeses)) {
+             if (saldoTotalAcumulado === Infinity || totalParcelas === Infinity || !isFinite(saldoTotalAcumulado / totalParcelas)) {
                  return { erro: "Cálculo resultaria em valor infinito ou inválido." };
              }
 
-            beneficioCalculado = saldoTotalAcumulado / totalMeses;
-            console.log(`Forma: Prazo Definido (${anos} anos). Benefício Mensal (estimativa simples sem rendimento): R$ ${beneficioCalculado.toFixed(2)}`);
+            beneficioCalculado = saldoTotalAcumulado / totalParcelas;
+            console.log(`Forma: Prazo Definido (${anos} anos, 13 parcelas/ano). Benefício por Parcela (estimativa simples): R$ ${beneficioCalculado.toFixed(2)}`);
+            observacao = `Calculado para ${totalParcelas} parcelas totais (${anos} anos x 13 parcelas/ano).`;
         }
 
         // Arredonda para 2 casas decimais e converte para número
@@ -66,11 +69,16 @@ function calcularBeneficioMensal(saldoTotalAcumulado, formaRecebimento, parametr
         }
 
         // Retorna sucesso
-        return {
+        const resultado = {
             formaRecebimento: formaRecebimento,
             parametroRecebimento: parametroRecebimento,
-            beneficioMensalCalculado: beneficioFinal
+            beneficioMensalCalculado: beneficioFinal // Mantemos o nome por consistência, mas representa o valor da parcela
         };
+        if(observacao){
+            resultado.observacao = observacao; // Adiciona a observação se houver
+        }
+        return resultado;
+
 
     } catch (error) {
         console.error("Erro inesperado no cálculo:", error);
