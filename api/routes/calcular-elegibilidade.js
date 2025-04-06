@@ -3,15 +3,23 @@ const { parseISO, differenceInYears, isValid, addYears } = require('date-fns');
 const { Router } = require('express');
 const router = Router();
 
-// Constantes para as regras
-const REQUIRED_AGE = 55;
-const REQUIRED_MEMBERSHIP_YEARS = 5; // 60 meses / 12 meses/ano
+// Valores padrão para as regras (caso não sejam enviados na requisição)
+const DEFAULT_REQUIRED_AGE = 55;
+const DEFAULT_REQUIRED_MEMBERSHIP_YEARS = 5; // 60 meses
 
 // --- Rota da API para verificar elegibilidade ---
 router.post('/checar-elegibilidade', (req, res) => {
+    // 1. Obter dados do corpo da requisição
     const { dateOfBirth, planMembershipYears } = req.body;
+    // Obter os requisitos da requisição OU usar os padrões
+    const inputRequiredAge = req.body.requiredAge;
+    const inputRequiredMembershipYears = req.body.requiredMembershipYears;
 
-    // Validação básica das entradas
+    // 2. Validação e Definição dos Requisitos a Usar
+    let requiredAgeToUse = inputRequiredAge ?? DEFAULT_REQUIRED_AGE; // Usa o input ou o padrão
+    let requiredMembershipYearsToUse = inputRequiredMembershipYears ?? DEFAULT_REQUIRED_MEMBERSHIP_YEARS; // Usa o input ou o padrão
+
+    // Validação básica dos campos principais
     if (!dateOfBirth || typeof planMembershipYears === 'undefined') {
         return res.status(400).json({ error: 'Campos "dateOfBirth" (YYYY-MM-DD) e "planMembershipYears" são obrigatórios.' });
     }
@@ -19,6 +27,15 @@ router.post('/checar-elegibilidade', (req, res) => {
          return res.status(400).json({ error: '"planMembershipYears" deve ser um número não negativo.' });
     }
 
+    // Validação dos campos de requisitos (se foram fornecidos)
+    if (inputRequiredAge !== undefined && (typeof inputRequiredAge !== 'number' || inputRequiredAge < 0)) {
+        return res.status(400).json({ error: '"requiredAge" (se fornecido) deve ser um número não negativo.' });
+    }
+    if (inputRequiredMembershipYears !== undefined && (typeof inputRequiredMembershipYears !== 'number' || inputRequiredMembershipYears < 0)) {
+        return res.status(400).json({ error: '"requiredMembershipYears" (se fornecido) deve ser um número não negativo.' });
+    }
+
+    // Validação do formato da data de nascimento
     let dobDate;
     try {
         dobDate = parseISO(dateOfBirth);
@@ -29,64 +46,41 @@ router.post('/checar-elegibilidade', (req, res) => {
         return res.status(400).json({ error: 'Formato inválido para "dateOfBirth". Use YYYY-MM-DD.' });
     }
 
-    // Lógica de Cálculo da Elegibilidade
+    // 3. Lógica de Cálculo da Elegibilidade (agora usando as variáveis de requisito)
     try {
         const currentDate = new Date();
         const age = differenceInYears(currentDate, dobDate);
-        const membershipMonths = planMembershipYears * 12;
+        const membershipMonths = planMembershipYears * 12; // Pode continuar calculando meses para informação
 
-        const isAgeEligible = age >= REQUIRED_AGE;
-        const isMembershipEligible = planMembershipYears >= REQUIRED_MEMBERSHIP_YEARS; // Usando anos para facilitar cálculo futuro
+        // Usa os valores definidos (input ou padrão)
+        const isAgeEligible = age >= requiredAgeToUse;
+        const isMembershipEligible = planMembershipYears >= requiredMembershipYearsToUse;
         const isEligible = isAgeEligible && isMembershipEligible;
 
-        // Prepara a resposta base
+        // Prepara a resposta base, refletindo os requisitos usados
         const responseDetails = {
-            requiredAge: REQUIRED_AGE,
+            requiredAge: requiredAgeToUse, // Informa o requisito usado
             calculatedAge: age,
             ageMet: isAgeEligible,
-            requiredMembershipYears: REQUIRED_MEMBERSHIP_YEARS,
+            requiredMembershipYears: requiredMembershipYearsToUse, // Informa o requisito usado
             calculatedMembershipYears: planMembershipYears,
-            calculatedMembershipMonths: membershipMonths, // Ainda útil informar
+            calculatedMembershipMonths: membershipMonths,
             membershipMet: isMembershipEligible,
         };
 
-        let nextEligibleAge = null; // Inicializa como null
+        let nextEligibleAge = null;
 
-        // Se não for elegível, calcula a idade da próxima elegibilidade
+        // Se não for elegível, calcula a idade da próxima elegibilidade usando os requisitos atuais
         if (!isEligible) {
-            // Anos que faltam para atingir a IDADE mínima (0 se já atingiu)
-            const yearsToMeetAge = Math.max(0, REQUIRED_AGE - age);
-
-            // Anos que faltam para atingir o TEMPO DE VÍNCULO mínimo (0 se já atingiu)
-            const yearsToMeetMembership = Math.max(0, REQUIRED_MEMBERSHIP_YEARS - planMembershipYears);
-
-            // O tempo total de espera é o MÁXIMO dos dois tempos faltantes
-            // (precisa esperar até que AMBAS as condições sejam atendidas)
+            const yearsToMeetAge = Math.max(0, requiredAgeToUse - age);
+            const yearsToMeetMembership = Math.max(0, requiredMembershipYearsToUse - planMembershipYears);
             const totalYearsToWait = Math.max(yearsToMeetAge, yearsToMeetMembership);
 
-            // Calcula a idade que a pessoa terá após esperar esses anos
-            // Soma a idade atual + os anos de espera.
-            // Usamos Math.ceil para garantir que pegamos o início do ano em que completa a condição.
-            // Ex: Falta 0.5 ano -> espera até completar esse ano -> idade + 1 (arredondado para cima)
-            // Mas se for um número exato, como 2 anos, age + 2. A idade é calculada no início do ano.
-            // Simplificação: A idade será a idade atual + o tempo de espera. Se o tempo de espera for fracionado,
-            // a elegibilidade ocorrerá durante aquele ano. Vamos retornar a idade inteira que terá *quando* ficar elegível.
-            // Ex: Age 54, Memb 10. yearsToMeetAge = 1, yearsToMeetMembership = 0. totalWait = 1. NextAge = 54+1=55.
-            // Ex: Age 60, Memb 4. yearsToMeetAge = 0, yearsToMeetMembership = 1. totalWait = 1. NextAge = 60+1=61.
-            // Ex: Age 50, Memb 3. yearsToMeetAge = 5, yearsToMeetMembership = 2. totalWait = 5. NextAge = 50+5=55.
-             // Ex: Age 54.5 (calculado como 54), Memb 4.5. yearsToMeetAge = 1, yearsToMeetMembership = 0.5. totalWait = 1. NextAge = 54+1=55.
-            // O calculo differenceInYears já dá a idade completa, então somar os anos de espera funciona.
-             nextEligibleAge = age + totalYearsToWait;
-
-
-            // Adiciona a informação à resposta
-             responseDetails.nextEligibleAge = Math.ceil(nextEligibleAge); // Arredonda para cima para ser mais claro (será elegível *aos* X anos)
-             // Opcional: Calcular a data exata
-             // const eligibilityDate = addYears(currentDate, totalYearsToWait);
-             // responseDetails.estimatedEligibilityDate = eligibilityDate.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+            nextEligibleAge = age + totalYearsToWait;
+            responseDetails.nextEligibleAge = Math.ceil(nextEligibleAge);
         }
 
-        // Enviar a Resposta
+        // 4. Enviar a Resposta
         res.status(200).json({
             isEligible: isEligible,
             details: responseDetails
