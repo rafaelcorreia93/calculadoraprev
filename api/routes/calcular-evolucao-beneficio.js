@@ -404,7 +404,7 @@ router.post('/simular-evolucao', (req, res) => {
     try {
         // 1. Validar req.body (usar bibliotecas como Joi ou express-validator é recomendado)
         const params = req.body;
-
+        console.log(params);
         // Exemplo de validação simples (substitua por algo robusto)
         if (!params || typeof params.saldoAcumuladoInicial !== 'number' /* ... outras validações */) {
             return res.status(400).json({ error: 'Parâmetros inválidos ou faltando.' });
