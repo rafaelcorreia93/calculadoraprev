@@ -19,7 +19,7 @@ if (!JWT_SECRET) {
 // e compararia a senha usando bcrypt.compare()
 const usuariosSimulados = [
   { cpf: "83683615834", senha: "Vivest@2025", id: 1, nome: "ABIGAIL APARECIDA ALONSO" },
-  { cpf: "222.222.222-22", senha: "outrasenha", id: 2, nome: "Outro Usuário" },
+  { cpf: "59543280800", senha: "123456", id: 2, nome: "JOAO BATISTA MARQUES" }
 ];
 
 // --- Endpoint de Login ---
