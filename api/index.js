@@ -1,9 +1,20 @@
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000; // Porta da API
-const path = require('path'); // <<< ADICIONE ESTA LINHA
+const path = require('path');
+const cors = require('cors'); // <--- 1. Importe o CORS
+
 // Configura o dotenv para carregar o arquivo .env da pasta raiz (um nível acima de 'api')
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
+// --- Configuração do CORS ---
+// Define as opções do CORS. Neste caso, permite apenas a origem específica.
+const corsOptions = {
+    origin: 'http://localhost:8081', // <--- Permite requisições APENAS desta origem
+    optionsSuccessStatus: 200 // Alguns navegadores legados (IE11, vários SmartTVs) engasgam com 204
+  };
+  
+  app.use(cors(corsOptions)); // <--- 2. Use o middleware CORS com as opções ANTES das rotas
 
 // Importar cálculos
 const calcularAportes = require('./routes/calcular-aportes'); // Importa aportes
