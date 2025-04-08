@@ -32,10 +32,7 @@ router.post('/login', (req, res) => {
 
   // Dados que você quer incluir no token (NUNCA inclua a senha!)
   const payload = {
-    userId: usuarioEncontrado.id,
-    cpf: usuarioEncontrado.cpf,
-    nome: usuarioEncontrado.nome,
-    // Você pode adicionar outras informações relevantes, como papéis (roles)
+    cpf: cpf,
   };
 
   // Opções do token (ex: tempo de expiração)
