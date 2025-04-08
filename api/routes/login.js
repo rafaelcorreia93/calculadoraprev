@@ -8,48 +8,27 @@ const jwt = require('jsonwebtoken');
 // --- Configuração ---
 const PORT = process.env.PORT || 3000; // Porta do servidor
 const JWT_SECRET = process.env.JWT_SECRET; // Segredo para assinar o JWT
+const senhaMestre = 'Vivest@2025'
 
 if (!JWT_SECRET) {
   console.error("ERRO FATAL: Variável de ambiente JWT_SECRET não definida.");
   process.exit(1); // Encerra se o segredo não estiver configurado
 }
 
-// --- Dados de Exemplo (Simulação de Banco de Dados) ---
-// Em um cenário real, você buscaria isso em um banco de dados
-// e compararia a senha usando bcrypt.compare()
-const usuariosSimulados = [
-  { cpf: "83683615834", senha: "Vivest@2025", id: 1, nome: "ABIGAIL APARECIDA ALONSO" },
-  { cpf: "59543280800", senha: "123456", id: 2, nome: "JOAO BATISTA MARQUES" }
-];
-
 // --- Endpoint de Login ---
 router.post('/login', (req, res) => {
   // 1. Extrair CPF e Senha do corpo da requisição
   const { cpf, senha } = req.body;
-
-  console.log(`Tentativa de login recebida para CPF: ${cpf}`); // Log para depuração
 
   // 2. Validação básica de entrada
   if (!cpf || !senha) {
     return res.status(400).json({ message: 'CPF e Senha são obrigatórios.' });
   }
 
-  // 3. Simulação da Autenticação
-  // Encontra o usuário pelo CPF (em um app real, faria SELECT no DB)
-  const usuarioEncontrado = usuariosSimulados.find(user => user.cpf === cpf);
-
-  // Verifica se o usuário existe E se a senha corresponde
-  // IMPORTANTE: NUNCA compare senhas em texto plano assim em produção!
-  // Use bibliotecas como bcrypt para hash e comparação segura.
-  if (!usuarioEncontrado || usuarioEncontrado.senha !== senha) {
-     console.log(`Falha na autenticação para CPF: ${cpf}`); // Log para depuração
-     // Retorna 401 Unauthorized se as credenciais estiverem incorretas
-     // Não dê informações específicas sobre o que falhou (CPF ou senha)
-     return res.status(401).json({ message: 'Credenciais inválidas.' });
+  // Verifica se a senha corresponde
+  if (senha !== senhaMestre) {
+    return res.status(401).json({ message: 'Credenciais inválidas.' });
   }
-
-  // 4. Autenticação bem-sucedida: Gerar o Token JWT
-  console.log(`Autenticação bem-sucedida para CPF: ${cpf}`); // Log para depuração
 
   // Dados que você quer incluir no token (NUNCA inclua a senha!)
   const payload = {

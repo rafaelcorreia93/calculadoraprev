@@ -24,6 +24,8 @@ const calcularBeneficioMensal = require('./routes/calcular-primeiro-beneficio');
 const calcularEvolucaoBeneficio = require('./routes/calcular-evolucao-beneficio'); // Importa Beneficio
 const calcularBeneficioIdeal = require('./routes/calcular-beneficio-ideal'); // Importa Beneficio
 const login = require('./routes/login'); // Importa Login
+const consultaPrevidencia = require('./routes/consulta-previdencia');
+
 
 // Middleware para parsear JSON no corpo da requisição
 app.use(express.json());
@@ -43,6 +45,7 @@ app.use('/api', calcularBeneficioMensal);
 app.use('/api', calcularEvolucaoBeneficio);
 app.use('/api', calcularBeneficioIdeal);
 app.use('/api', login);
+app.use('/api', consultaPrevidencia);
 
 // Inicia o servidor
 app.listen(port, () => {
