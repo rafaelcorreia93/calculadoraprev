@@ -5,6 +5,7 @@ const hash = require('./gerarHash'); // Importa Hash
 
 const apiUrlProdutos = 'https://vivest-hmg.azure-api.net/apis/api-cadastro-dados-cadastrais/ListaProdutos/';
 const apiUrlDetalhe = 'https://vivest-hmg.azure-api.net/apis/api-cadastro-dados-cadastrais/v1/previdencia/participante/Planos/detalhe';
+const apiUrlCadastro = 'https://vivest-hmg.azure-api.net/apis/api-cadastro-dados-cadastrais/v1/previdencia/Participante';
 
 // --- Rota ---
 router.post('/dados-previdencia', async (req, res) => {
@@ -64,7 +65,25 @@ router.post('/dados-previdencia', async (req, res) => {
 
        const detalhesProduto = await responseDetalheProdutos.json();
 
+        const responseDadosCadastrais = await fetch(apiUrlCadastro, {
+            method: 'POST', // Opcional, GET é o padrão
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer '+ token,
+                'Ocp-Apim-Subscription-Key': process.env.subsciption
+            },
+            body: JSON.stringify(dadosParaConsultaDetalhe)
+       });
+       if (!responseDadosCadastrais.ok) {
+            console.log('deu erro na cadastro');
+            
+        }
+
+       const detalhesCadastro = await responseDadosCadastrais.json();
+
        const dadosCompletos = {
+        cadastro: detalhesCadastro,
         produto: produtoPrev,
         detalhe: detalhesProduto
        }
