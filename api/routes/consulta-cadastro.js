@@ -9,7 +9,6 @@ const apiUrlCadastro = 'https://vivest-hmg.azure-api.net/apis/api-cadastro-dados
 router.post('/dados-cadastro', async (req, res) => {
 
     const token = await hash.gerarToken();
-    
     try {
         const responseDadosCadastrais = await fetch(apiUrlCadastro, {
             method: 'POST', // Opcional, GET é o padrão
@@ -19,7 +18,7 @@ router.post('/dados-cadastro', async (req, res) => {
                 'Authorization': 'Bearer '+ token,
                 'Ocp-Apim-Subscription-Key': process.env.subsciption
             },
-            body: JSON.stringify(req)
+            body: JSON.stringify(req.body)
        });
        if (!responseDadosCadastrais.ok) {
             console.log('deu erro na cadastro');
@@ -28,10 +27,10 @@ router.post('/dados-cadastro', async (req, res) => {
 
        const detalhesCadastro = await responseDadosCadastrais.json();
        
-        res.json(detalhesCadastro);
+        res.json(detalhesCadastro.data);
     
     } catch (error) {
-        console.error("Erro ao gerar o hash:", error);
+        console.error("Erro consulta", error);
         // Retorne um erro apropriado no seu endpoint da API
     }
 });
