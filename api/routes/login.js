@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 
 // --- Configuração ---
 const PORT = process.env.PORT || 3000; // Porta do servidor
+const apiUrlProdutos = 'https://vivest-hmg.azure-api.net/apis/api-cadastro-dados-cadastrais/ListaProdutos/';
 const JWT_SECRET = process.env.JWT_SECRET; // Segredo para assinar o JWT
 const senhaMestre = 'Vivest@2025'
 
@@ -30,31 +31,77 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ message: 'Credenciais inválidas.' });
   }
 
-  // Dados que você quer incluir no token (NUNCA inclua a senha!)
-  const payload = {
-    cpf: cpf,
-  };
+  // retorna ok
+  return res.status(200).json({
+    message: 'Login bem-sucedido!'
+  });
 
-  // Opções do token (ex: tempo de expiração)
-  const opcoes = {
-    expiresIn: '1h' // Token expira em 1 hora (ex: '1d', '7d', '30m')
-  };
-
-  // Gerar o token
-  try {
-    const token = jwt.sign(payload, JWT_SECRET, opcoes);
-
-    // 5. Retornar o token para o cliente
-    return res.status(200).json({
-      message: 'Login bem-sucedido!',
-      token: token
-    });
-
-  } catch (error) {
-      console.error("Erro ao gerar o token JWT:", error);
-      return res.status(500).json({ message: "Erro interno ao tentar gerar o token." });
-  }
 });
+
+// --- Endpoint de Dados Prev e Token ---
+router.post('/generateToken', async (req, res) => {
+    const cpf = req.body.cpf;
+
+    // Consultar dados de produto
+    const responseProdutos = await fetch(apiUrlProdutos+ cpf, {
+      method: 'GET', // Opcional, GET é o padrão
+      headers: {
+          'Accept': 'application/json',
+          'Ocp-Apim-Subscription-Key': process.env.subsciption
+      }
+    });
+    if (!responseProdutos.ok) {
+      // Se não foi OK, tenta ler o corpo do erro como texto
+      const errorBody = await responseProdutos.text();
+      console.error(`Erro ${responseProdutos.status} da API: ${errorBody}`);
+      // Lança um erro para ser pego pelo catch externo
+      throw new Error(`Erro da API externa: ${responseProdutos.status} - ${errorBody.substring(0, 100)}`);
+    }
+    const responseProdutosObj = await responseProdutos.json();
+    if(!responseProdutosObj.data.length) {
+        console.log('sem produto');
+        res.json({'res': 'sem produto'});
+    } else {
+        // Extrair dados da previdência
+        const produtoPrev = responseProdutosObj.data.find(item => {
+          return item && item.produto === 'Previdencia';
+        });
+        if(produtoPrev) {
+                // Dados que você quer incluir no token (NUNCA inclua a senha!)
+        const payload = {
+          cpf: cpf,
+          empresa: produtoPrev.codigoEmpresa,
+          matricula: produtoPrev.matricula.toString(),
+          codPlano: produtoPrev.codigoPlano
+        };
+  
+        // Opções do token (ex: tempo de expiração)
+        const opcoes = {
+          expiresIn: '30d' // Token expira em 1 hora (ex: '1d', '7d', '30m')
+        };
+  
+        // Gerar o token
+        try {
+          const token = jwt.sign(payload, JWT_SECRET, opcoes);
+  
+          // 5. Retornar o token para o cliente
+          return res.status(200).json({
+            message: 'Dados carregados com sucesso!',
+            token: token,
+            produto: produtoPrev
+          });
+  
+        } catch (error) {
+            console.error("Erro ao gerar o token JWT:", error);
+            return res.status(500).json({ message: "Erro interno ao tentar gerar o token." });
+        }
+        } else {
+            return res.status(401).json({ message: 'Sem produto prev.' });
+        }
+  
+    }
+});
+
 
 // --- Rota de Exemplo (protegida) ---
 // Middleware simples para verificar o token (exemplo)

@@ -30,66 +30,50 @@ router.post('/dados-previdencia', async (req, res) => {
             throw new Error(`Erro da API externa: ${responseProdutos.status} - ${errorBody.substring(0, 100)}`);
         }
         const responseProdutosObj = await responseProdutos.json();
-        
-        const produtoPrev = responseProdutosObj.data.find(item => {
-            return item && item.produto === 'Previdencia';
-          });
+        if(!responseProdutosObj.data.length) {
+            console.log('sem produto');
+            res.json({'res': 'sem produto'});
 
-        const dadosParaConsultaDetalhe = {
-            cpf: req.body.cpf,
-            empresa: produtoPrev.codigoEmpresa,
-            matricula: produtoPrev.matricula.toString(),
-            codPlano: produtoPrev.codigoPlano
-        }
-        const teste = {
-            cpf: "83683615834",
-            empresa: 40,
-            matricula: "596779",
-            codPlano: 46
-        }
-
-        const responseDetalheProdutos = await fetch(apiUrlDetalhe, {
-            method: 'POST', // Opcional, GET é o padrão
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer '+ token,
-                'Ocp-Apim-Subscription-Key': process.env.subsciption
-            },
-            body: JSON.stringify(dadosParaConsultaDetalhe)
-       });
-       if (!responseDetalheProdutos.ok) {
-            console.log('deu erro na detalhe');
+        } else {
+            console.log(responseProdutosObj);
             
-        }
-
-       const detalhesProduto = await responseDetalheProdutos.json();
-
-        const responseDadosCadastrais = await fetch(apiUrlCadastro, {
-            method: 'POST', // Opcional, GET é o padrão
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer '+ token,
-                'Ocp-Apim-Subscription-Key': process.env.subsciption
-            },
-            body: JSON.stringify(dadosParaConsultaDetalhe)
-       });
-       if (!responseDadosCadastrais.ok) {
-            console.log('deu erro na cadastro');
+            const produtoPrev = responseProdutosObj.data.find(item => {
+                return item && item.produto === 'Previdencia';
+              });
             
-        }
-
-       const detalhesCadastro = await responseDadosCadastrais.json();
-
-       const dadosCompletos = {
-        cadastro: detalhesCadastro,
-        produto: produtoPrev,
-        detalhe: detalhesProduto
-       }
-       
-        res.json(dadosCompletos);
+            const dadosParaConsultaDetalhe = {
+                cpf: req.body.cpf,
+                empresa: produtoPrev.codigoEmpresa,
+                matricula: produtoPrev.matricula.toString(),
+                codPlano: produtoPrev.codigoPlano
+            }
     
+            const responseDetalheProdutos = await fetch(apiUrlDetalhe, {
+                method: 'POST', // Opcional, GET é o padrão
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer '+ token,
+                    'Ocp-Apim-Subscription-Key': process.env.subsciption
+                },
+                body: JSON.stringify(dadosParaConsultaDetalhe)
+           });
+           if (!responseDetalheProdutos.ok) {
+                console.log('deu erro na detalhe');
+                
+            }
+    
+           const detalhesProduto = await responseDetalheProdutos.json();
+    
+           const dadosCompletos = {
+            produto: produtoPrev,
+            detalhe: detalhesProduto
+           }
+           
+            res.json(dadosCompletos);
+        
+        }
+        
     } catch (error) {
         console.error("Erro ao gerar o hash:", error);
         // Retorne um erro apropriado no seu endpoint da API
