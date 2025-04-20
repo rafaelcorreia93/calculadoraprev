@@ -3,7 +3,7 @@ require('dotenv').config(); // Carrega variáveis do .env para process.env
 const { Router } = require('express');
 const router = Router();
 const jwt = require('jsonwebtoken');
-
+const hash = require('./gerarHash'); // Importa Hash
 
 // --- Configuração ---
 const PORT = process.env.PORT || 3000; // Porta do servidor
@@ -41,13 +41,15 @@ router.post('/login', (req, res) => {
 // --- Endpoint de Dados Prev e Token ---
 router.post('/generateToken', async (req, res) => {
     const cpf = req.body.cpf;
+    const token = await hash.gerarToken();
 
     // Consultar dados de produto
     const responseProdutos = await fetch(apiUrlProdutos+ cpf, {
       method: 'GET', // Opcional, GET é o padrão
       headers: {
           'Accept': 'application/json',
-          'Ocp-Apim-Subscription-Key': process.env.subsciption
+          'Ocp-Apim-Subscription-Key': process.env.subsciption,
+          'Authorization': 'Bearer '+ token
       }
     });
     if (!responseProdutos.ok) {
